@@ -3,7 +3,7 @@ mod handlers;
 mod input;
 
 
-pub use app::run;
+pub use app::App;
 
 
 
