@@ -1,5 +1,5 @@
 // todo_app/src/cli/app.rs
-use super::handlers::{handle_add, handle_list};
+use super::handlers::{handle_add, handle_list,handle_mark_as_complete};
 use std::io::{self, Write};
 use crate::TodoList;
 
@@ -23,6 +23,9 @@ pub fn run()->Result<(),Box<dyn std::error::Error>> {
             }
             "add" => {
                 handle_add(&mut todo);
+            }
+            "complete task"|"complete"=>{
+                handle_mark_as_complete(&mut todo);
             }
 
             _ => println!("unknown command"),

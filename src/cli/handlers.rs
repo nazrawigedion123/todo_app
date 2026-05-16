@@ -1,6 +1,5 @@
-
 use super::input::input;
-use crate::{TodoError,TodoList};
+use crate::{TodoError, TodoList, cli::input::input_int};
 pub fn handle_add(todo: &mut TodoList) {
     let title = input("Enter title: ");
     let description = input("Enter Description: ");
@@ -24,3 +23,12 @@ pub fn handle_list(todo: &TodoList) {
     }
 }
 
+pub fn handle_mark_as_complete(todo: &mut TodoList) {
+    let index= input_int("Enter index");
+
+    match todo.complete_task(index) {
+        Ok(()) => println!("Task {index} marked as completed"),
+        Err(TodoError::InvalidIndex(index)) => println!("❌ {}", TodoError::InvalidIndex(index)),
+        Err(e) => println!("❌ {e}"),
+    }
+}
