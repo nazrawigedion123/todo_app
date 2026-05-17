@@ -1,4 +1,9 @@
-use crate::{Task, TodoError, repository::InMemoryRepo};
+
+
+use crate::{
+    Task, TodoError,
+    repository::{InMemoryRepo, sqllite::SqliteRepo},
+};
 
 use std::fmt;
 
@@ -9,7 +14,7 @@ pub trait TodoRepository: Send + Sync {
     fn list_tasks(&self) -> Result<Vec<Task>, TodoError>;
     fn get_task(&self, id: usize) -> Result<Option<Task>, TodoError>;
     fn remove_task(&mut self, id: usize) -> Result<Option<Task>, TodoError>;
-    fn complete_task(&mut self, id: usize) -> Result<Task, TodoError>;
+    fn complete_task(&mut self, id: usize) -> Result<bool, TodoError>;
     fn task_count(&self) -> Result<usize, TodoError>;
     fn clear_all(&mut self) -> Result<(), TodoError>;
 }
@@ -30,8 +35,15 @@ impl fmt::Display for RepositoryConfig {
     }
 }
 
-pub fn create_repository()->Box<dyn TodoRepository>{
-   
-        
-        Box::new(InMemoryRepo::new())
+pub fn create_repository(config: &RepositoryConfig) -> Box<dyn TodoRepository> {
+    match config {
+        RepositoryConfig::InMemory => Box::new(InMemoryRepo::new()),
+        RepositoryConfig::File { path } => {
+            Box::new(SqliteRepo::new(path).expect("failed to create sql repo"))
+        }
+        RepositoryConfig::Sqllite { path } => {
+            Box::new(SqliteRepo::new(path).expect("failed to create sql repo"))
+        }
+    }
+    // Box::new(InMemoryRepo::new())
 }

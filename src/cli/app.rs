@@ -3,16 +3,16 @@ use super::handlers::{handle_add, handle_list, handle_mark_as_complete};
 
 use std::io::{self, Write};
 
-use crate::repository::{TodoRepository, create_repository};
+use crate::repository::{TodoRepository,RepositoryConfig, create_repository};
 
 pub struct App {
     repo: Box<dyn TodoRepository>,
 }
 
 impl App {
-    pub fn new() -> Self {
+    pub fn new(config: RepositoryConfig) -> Self {
         Self {
-            repo: (create_repository()),
+            repo: (create_repository(&config)),
         }
     }
     pub fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {

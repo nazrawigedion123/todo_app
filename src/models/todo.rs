@@ -28,6 +28,8 @@ pub enum TodoError {
     TaskAlreadyComplete(usize),
     #[error("todo list already empty")]
     AlreadyEmpty,
+    #[error("database err")]
+    DatabaseError(String),
 }
 impl fmt::Display for Task {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

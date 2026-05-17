@@ -44,18 +44,18 @@ impl TodoRepository for InMemoryRepo{
         let position = self.tasks.iter().position(|t| t.id==id);
         match position{
             Some(idx)=>Ok(Some(self.tasks.remove(idx))),
-            None=>return Err(TodoError::InvalidIndex(id)),
+            None=> Err(TodoError::InvalidIndex(id)),
         }
     }
-    fn complete_task(&mut self, id :usize)->Result<Task,TodoError>{
+    fn complete_task(&mut self, id :usize)->Result<bool,TodoError>{
         if let Some(task)=self.tasks.iter_mut().find(|t| t.id==id){
             if task.completed{
                 return Err(TodoError::TaskAlreadyComplete(id))
             }
             task.completed=true;
-            Ok(task.clone())
+            Ok(task.completed)
         }else{
-            return Err(TodoError::InvalidIndex(id))
+            Err(TodoError::InvalidIndex(id))
           
         }
     }
