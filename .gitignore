@@ -2,3 +2,5 @@
 *.db*
 explanation.md
 *:memory:
+
+testing_plan.md
