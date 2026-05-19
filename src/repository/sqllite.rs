@@ -156,18 +156,23 @@ impl TodoRepository for SqliteRepo {
         }
     }
     fn remove_task(&mut self, id: usize) -> Result<Option<Task>, TodoError> {
-        let task = self.get_task(id)?;
+        let task = self.get_task(id);
+        match task {
+            Ok(t) => (),
+            Err(e) => return Err(TodoError::InvalidIndex(id)),
+        }
+        let ta: Option<Task> = self.get_task(id).unwrap();
 
         let conn = self
             .pool
             .get()
             .map_err(|e| TodoError::DatabaseError(format!("Pool err: {e}")))?;
 
-        if task.is_some() {
+        if ta.is_some() {
             conn.execute("DELETE FROM tasks where id=?1", [id])
                 .map_err(|e| TodoError::DatabaseError(e.to_string()))?;
         }
-        Ok(task)
+        Ok(ta)
     }
 
     fn complete_task(&mut self, id: usize) -> Result<bool, TodoError> {
@@ -188,7 +193,7 @@ impl TodoRepository for SqliteRepo {
             // Check if the task even exists in the database
             let task = self.get_task(id);
             match task {
-                Ok(_) => return Ok(false),
+                Ok(_) => return Err(TodoError::TaskAlreadyComplete(id)),
                 Err(_) => return Err(TodoError::InvalidIndex(id)),
             }
 
@@ -220,14 +225,16 @@ impl TodoRepository for SqliteRepo {
             .map_err(|e| TodoError::DatabaseError(format!("Pool err: {e}")))?;
         let tasks = self.list_tasks();
         match tasks {
-            Ok(ts) => ({
-                if ts.is_empty(){
-                  return   Err(TodoError::AlreadyEmpty);
-                }
-            }),
-            Err(e) => println!("error :{e}"),
+            Ok(ts) => {
+                ({
+                    if ts.is_empty() {
+                        return Err(TodoError::AlreadyEmpty);
+                    }
+                })
+            }
+            Err(e) => return Err(TodoError::DatabaseError(e.to_string())),
         }
-      
+
         conn.execute("DELETE FROM tasks", [])
             .map_err(|e| TodoError::DatabaseError(e.to_string()))?;
 
@@ -243,7 +250,7 @@ mod tests {
         // let url =format!("file:{random_id}?mode=memory&cache=shared");
         SqliteRepo::new_in_memory(random_id).unwrap()
     }
-
+    #[test]
     fn test_add_task_validation() {
         let mut repo = setup_test_repo();
         let err = repo
@@ -310,6 +317,7 @@ mod tests {
         description = "description2".to_string();
         let task_create = repo.add_task(title, description).unwrap();
         let task = repo.get_task(1).unwrap();
+        assert!(task.is_some());
         assert!(matches!(task_create, _task));
     }
 
@@ -369,6 +377,23 @@ mod tests {
     }
 
     #[test]
+    fn test_complete_task_already_complete() {
+        let mut title = "title".to_string();
+        let mut description = "desc".to_string();
+
+        let mut repo = setup_test_repo();
+        repo.add_task(title, description);
+        title = "title1".to_string();
+        description = "description2".to_string();
+        let task = repo.add_task(title, description).unwrap();
+
+        repo.complete_task(task.id);
+        let is_complete = repo.complete_task(task.id).unwrap_err();
+
+        assert_eq!(is_complete, TodoError::TaskAlreadyComplete(task.id));
+    }
+
+    #[test]
     fn test_complete_task_not_found() {
         let mut title = "title".to_string();
         let mut description = "desc".to_string();
@@ -424,4 +449,35 @@ mod tests {
 
         assert_eq!(is_cleared, Err(TodoError::AlreadyEmpty));
     }
+
+    #[test]
+    fn test_task_clear_database_error_table_missing() {
+        let mut repo = setup_test_repo();
+
+        // 1. Break the database by dropping the table out from under it
+        {
+            // We look up a connection directly via the repo's pool
+            let conn = repo.pool.get().unwrap();
+            conn.execute("DROP TABLE tasks;", []).unwrap();
+        } // Connection is dropped here and returned to the pool
+
+        // 2. Call clear_all. It will try to list_tasks(), fail, and hit the Err(e) block.
+        let result = repo.clear_all();
+
+        // 3. Assert it returned a DatabaseError
+        assert!(
+            matches!(result, Err(TodoError::DatabaseError(_))),
+            "Expected DatabaseError, got {:?}",
+            result
+        );
+    }
+
+    //  #[test]
+    // fn test_task_clear_() {
+    //     let mut repo = setup_test_repo();
+
+    //     let is_cleared = repo.clear_all();
+
+    //     assert_eq!(is_cleared, Err(TodoError::AlreadyEmpty));
+    // }
 }
