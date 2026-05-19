@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Task {
     pub id: usize,
     pub description: String,
@@ -16,7 +16,7 @@ pub struct TodoList {
     pub next_id: usize,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, PartialEq)]
 pub enum TodoError {
     #[error("Title canot be empty")]
     EmptyTitle,

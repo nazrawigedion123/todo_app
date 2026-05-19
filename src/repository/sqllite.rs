@@ -8,6 +8,10 @@ pub struct SqliteRepo {
     pool: Pool<SqliteConnectionManager>,
 }
 impl SqliteRepo {
+    pub fn new_in_memory(random_string: String) -> Result<Self, TodoError> {
+        // "file::memory:?cache=shared" keeps the memory DB alive across connections
+        Self::new(&format!("file:{random_string}:memory:?cache=shared"))
+    }
     pub fn new(db_path: &str) -> Result<Self, TodoError> {
         // 1. Create the connection manager. It automatically creates the DB file if missing.
         let manager = SqliteConnectionManager::file(db_path);
@@ -124,7 +128,7 @@ impl TodoRepository for SqliteRepo {
             .get()
             .map_err(|e| TodoError::DatabaseError(format!("Pool err: {e}")))?;
         let mut stmt = conn
-            .prepare("SELECT id, title, description,complete FROM tasks WHERE id=?1")
+            .prepare("SELECT id, title, description,completed FROM tasks WHERE id=?1")
             .map_err(|e| TodoError::DatabaseError(e.to_string()))?;
         let mut rows = stmt
             .query([id])
@@ -134,10 +138,18 @@ impl TodoRepository for SqliteRepo {
             .map_err(|e| TodoError::DatabaseError(e.to_string()))?
         {
             Ok(Some(Task {
-                id: row.get(0).map_err(|e| TodoError::DatabaseError(e.to_string()))?,
-                title: row.get(1).map_err(|e| TodoError::DatabaseError(e.to_string()))?,
-                description: row.get(2).map_err(|e| TodoError::DatabaseError(e.to_string()))?,
-                completed: row.get(3).map_err(|e| TodoError::DatabaseError(e.to_string()))?,
+                id: row
+                    .get(0)
+                    .map_err(|e| TodoError::DatabaseError(e.to_string()))?,
+                title: row
+                    .get(1)
+                    .map_err(|e| TodoError::DatabaseError(e.to_string()))?,
+                description: row
+                    .get(2)
+                    .map_err(|e| TodoError::DatabaseError(e.to_string()))?,
+                completed: row
+                    .get(3)
+                    .map_err(|e| TodoError::DatabaseError(e.to_string()))?,
             }))
         } else {
             Err(TodoError::InvalidIndex(id))
@@ -163,12 +175,27 @@ impl TodoRepository for SqliteRepo {
             .pool
             .get()
             .map_err(|e| TodoError::DatabaseError(format!("Pool err: {e}")))?;
+        let task = self.get_task(id);
+
         let affected = conn
             .execute(
                 "UPDATE tasks SET completed=1 WHERE id =?1 AND completed=0",
                 [id],
             )
             .map_err(|e| TodoError::DatabaseError(e.to_string()))?;
+
+        if affected == 0 {
+            // Check if the task even exists in the database
+            let task = self.get_task(id);
+            match task {
+                Ok(_) => return Ok(false),
+                Err(_) => return Err(TodoError::InvalidIndex(id)),
+            }
+
+            // If it exists but affected was 0, it means it was already completed.
+            // Return false indicating no state change occurred.
+            // return Ok(false);
+        }
 
         // task = self.get_task(id);
         Ok(affected > 0)
@@ -191,9 +218,210 @@ impl TodoRepository for SqliteRepo {
             .pool
             .get()
             .map_err(|e| TodoError::DatabaseError(format!("Pool err: {e}")))?;
+        let tasks = self.list_tasks();
+        match tasks {
+            Ok(ts) => ({
+                if ts.is_empty(){
+                  return   Err(TodoError::AlreadyEmpty);
+                }
+            }),
+            Err(e) => println!("error :{e}"),
+        }
+      
         conn.execute("DELETE FROM tasks", [])
             .map_err(|e| TodoError::DatabaseError(e.to_string()))?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn setup_test_repo() -> SqliteRepo {
+        let random_id = uuid::Uuid::new_v4().to_string();
+        // let url =format!("file:{random_id}?mode=memory&cache=shared");
+        SqliteRepo::new_in_memory(random_id).unwrap()
+    }
+
+    fn test_add_task_validation() {
+        let mut repo = setup_test_repo();
+        let err = repo
+            .add_task("".to_string(), "description".to_string())
+            .unwrap_err();
+        assert!(matches!(err, TodoError::EmptyTitle));
+    }
+
+    #[test]
+    fn test_add_task_validation_description() {
+        let mut repo = setup_test_repo();
+        let err = repo
+            .add_task("title".to_string(), "".to_string())
+            .unwrap_err();
+        assert!(matches!(err, TodoError::EmptyDescription));
+    }
+    #[test]
+    fn test_add_task() {
+        let title = "title".to_string();
+        let description = "desc".to_string();
+        let mut repo = setup_test_repo();
+        let task = repo.add_task(title, description).unwrap();
+        assert!(matches!(
+            task,
+            Task {
+                id: 1,
+                title,
+                description,
+                completed: false
+            }
+        ));
+    }
+
+    #[test]
+    fn test_list_tasks() {
+        let mut title = "title".to_string();
+        let mut description = "desc".to_string();
+
+        let mut repo = setup_test_repo();
+        repo.add_task(title, description);
+        title = "title1".to_string();
+        description = "description2".to_string();
+        repo.add_task(title, description);
+        let tasks = repo.list_tasks().unwrap();
+        assert!(matches!(tasks.len(), 2));
+    }
+
+    #[test]
+    fn test_list_tasks_empty() {
+        let mut repo = setup_test_repo();
+
+        let tasks = repo.list_tasks().unwrap();
+        assert!(matches!(tasks.len(), 0));
+    }
+
+    #[test]
+    fn test_get_task() {
+        let mut title = "title".to_string();
+        let mut description = "desc".to_string();
+
+        let mut repo = setup_test_repo();
+        repo.add_task(title, description);
+        title = "title1".to_string();
+        description = "description2".to_string();
+        let task_create = repo.add_task(title, description).unwrap();
+        let task = repo.get_task(1).unwrap();
+        assert!(matches!(task_create, _task));
+    }
+
+    #[test]
+    fn test_get_task_not_found() {
+        let repo = setup_test_repo();
+
+        let err = repo.get_task(1).unwrap_err();
+        assert!(matches!(TodoError::InvalidIndex(1), _err));
+    }
+
+    #[test]
+    fn test_remove_task() {
+        let mut title = "title".to_string();
+        let mut description = "desc".to_string();
+
+        let mut repo = setup_test_repo();
+        repo.add_task(title, description);
+        title = "title1".to_string();
+        description = "description2".to_string();
+        repo.add_task(title, description);
+        repo.remove_task(1);
+        let tasks = repo.list_tasks();
+        match tasks {
+            Ok(tasks) => assert!(matches!(tasks.len(), 1)),
+            Err(e) => assert!(matches!(e, TodoError::InvalidIndex(0))),
+        }
+    }
+    #[test]
+    fn test_remove_task_not_found() {
+        let mut title = "title".to_string();
+        let mut description = "desc".to_string();
+
+        let mut repo = setup_test_repo();
+        repo.add_task(title, description);
+        title = "title1".to_string();
+        description = "description2".to_string();
+        repo.add_task(title, description);
+        let task = repo.remove_task(0);
+
+        assert_eq!(task, Err(TodoError::InvalidIndex(0)));
+    }
+    #[test]
+    fn test_complete_task() {
+        let mut title = "title".to_string();
+        let mut description = "desc".to_string();
+
+        let mut repo = setup_test_repo();
+        repo.add_task(title, description);
+        title = "title1".to_string();
+        description = "description2".to_string();
+        let task = repo.add_task(title, description).unwrap();
+
+        let is_complete = repo.complete_task(task.id);
+
+        assert_eq!(is_complete, Ok(true));
+    }
+
+    #[test]
+    fn test_complete_task_not_found() {
+        let mut title = "title".to_string();
+        let mut description = "desc".to_string();
+
+        let mut repo = setup_test_repo();
+        repo.add_task(title, description);
+        title = "title1".to_string();
+        description = "description2".to_string();
+        repo.add_task(title, description).unwrap();
+
+        let is_complete = repo.complete_task(0);
+
+        assert_eq!(is_complete, Err(TodoError::InvalidIndex(0)));
+    }
+
+    #[test]
+    fn test_task_count() {
+        let mut title = "title".to_string();
+        let mut description = "desc".to_string();
+
+        let mut repo = setup_test_repo();
+        repo.add_task(title, description);
+        title = "title1".to_string();
+        description = "description2".to_string();
+        repo.add_task(title, description);
+
+        let count = repo.task_count();
+
+        assert_eq!(count, Ok(2))
+    }
+
+    #[test]
+    fn test_task_clear() {
+        let mut title = "title".to_string();
+        let mut description = "desc".to_string();
+
+        let mut repo = setup_test_repo();
+        repo.add_task(title, description);
+        title = "title1".to_string();
+        description = "description2".to_string();
+        repo.add_task(title, description);
+
+        repo.clear_all();
+
+        assert_eq!(repo.task_count(), Ok(0));
+    }
+
+    #[test]
+    fn test_task_clear_already_empty() {
+        let mut repo = setup_test_repo();
+
+        let is_cleared = repo.clear_all();
+
+        assert_eq!(is_cleared, Err(TodoError::AlreadyEmpty));
     }
 }
