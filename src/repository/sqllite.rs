@@ -1,3 +1,4 @@
+// todo_app/src/repository/sqllite.rs
 use super::TodoRepository;
 use crate::{Task, TodoError};
 use r2d2::Pool;
@@ -10,7 +11,7 @@ pub struct SqliteRepo {
 impl SqliteRepo {
     pub fn new_in_memory(random_string: String) -> Result<Self, TodoError> {
         // "file::memory:?cache=shared" keeps the memory DB alive across connections
-        Self::new(&format!("file:{random_string}:memory:?cache=shared"))
+        Self::new(&format!("file:{random_string}?mode=memory&cache=shared"))
     }
     pub fn new(db_path: &str) -> Result<Self, TodoError> {
         // 1. Create the connection manager. It automatically creates the DB file if missing.
@@ -471,6 +472,9 @@ mod tests {
             result
         );
     }
+
+
+    
 
     //  #[test]
     // fn test_task_clear_() {
